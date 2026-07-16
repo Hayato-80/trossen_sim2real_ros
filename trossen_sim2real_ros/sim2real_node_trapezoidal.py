@@ -63,6 +63,8 @@ class Sim2RealTrapezoidalNode(Node):
         self.current_joint_pos = {name: 0.0 for name in self.all_joint_names}
         self.current_joint_vel = {name: 0.0 for name in self.all_joint_names}
         self.last_actions = np.zeros(len(self.arm_joint_names), dtype=np.float32)
+        self.joint_states_received = False
+        self.marker_initialized = False
 
         # Target pose (default: a safe reachable pose)
         self.target_pose = [0.45, 0.0, 0.25, 1.0, 0.0, 0.0, 0.0]  # pos (3) + quat (w, x, y, z)
@@ -236,6 +238,7 @@ class Sim2RealTrapezoidalNode(Node):
                 self.current_joint_pos[name] = msg.position[i]
                 if len(msg.velocity) > i:
                     self.current_joint_vel[name] = msg.velocity[i]
+        self.joint_states_received = True
 
     def target_pose_callback(self, msg):
         self.target_pose = [
@@ -282,9 +285,45 @@ class Sim2RealTrapezoidalNode(Node):
             self.get_logger().debug(f"Could not compute tracking error: {e}")
 
     def control_loop(self):
-        if self.model is None or self.ee_frame_id is None:
-            # Cannot run IK without model
+        if not self.joint_states_received or self.model is None or self.ee_frame_id is None:
+            # Wait for joint states and model to be ready
             return
+
+        if not self.marker_initialized:
+            # Compute current end-effector pose using Pinocchio forward kinematics
+            q = np.zeros(self.model.nq)
+            for name in self.all_joint_names:
+                if self.model.existJointName(name):
+                    idx = self.model.joints[self.model.getJointId(name)].idx_q
+                    q[idx] = self.current_joint_pos[name]
+            
+            pin.forwardKinematics(self.model, self.data, q)
+            pin.updateFramePlacements(self.model, self.data)
+            
+            oMf = self.data.oMf[self.ee_frame_id]
+            pos = oMf.translation
+            quat = pin.Quaternion(oMf.rotation)
+            
+            self.target_pose = [
+                pos[0], pos[1], pos[2],
+                quat.w, quat.x, quat.y, quat.z
+            ]
+            
+            # Sync interactive marker server pose
+            from geometry_msgs.msg import Pose
+            pose = Pose()
+            pose.position.x = float(pos[0])
+            pose.position.y = float(pos[1])
+            pose.position.z = float(pos[2])
+            pose.orientation.w = float(quat.w)
+            pose.orientation.x = float(quat.x)
+            pose.orientation.y = float(quat.y)
+            pose.orientation.z = float(quat.z)
+            self.server.setPose("target_goal", pose)
+            self.server.applyChanges()
+            
+            self.marker_initialized = True
+            self.get_logger().info(f"Initialized target pose to current end-effector: {self.target_pose}")
 
         # 1. joint_pos_rel (8)
         joint_pos_rel = []
