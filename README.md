@@ -1,0 +1,1 @@
+# This is a ros2 package for Sim2Real transfer of trossen WidowX AI arm.
