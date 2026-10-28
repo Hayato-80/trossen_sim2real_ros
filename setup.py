@@ -26,6 +26,8 @@ setup(
         'console_scripts': [
             'sim2real_node = trossen_sim2real_ros.sim2real_node:main',
             'sim2real_node_trapezoidal = trossen_sim2real_ros.sim2real_node_trapezoidal:main',
+            'sim2real_node_switch = trossen_sim2real_ros.sim2real_node_switch:main',
+            'sim2real_node_test = trossen_sim2real_ros.sim2real_node_test:main',
         ],
     },
 )

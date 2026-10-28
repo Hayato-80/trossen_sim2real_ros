@@ -67,7 +67,17 @@ class Sim2RealNode(Node):
         self.marker_initialized = False
 
         # Target pose (default: a safe reachable pose)
-        self.target_pose = [0.45, 0.0, 0.35, 1.0, 0.0, 0.0, 0.0]  # pos (3) + quat (w, x, y, z)
+        self.target_pose = [0.550, -0.000, 0.262, 1.0, 0.0, 0.0, 0.0]  # pos (3) + quat (w, x, y, z)
+
+        # CLI Target Parameters (set these via --ros-args -p to specify target at launch)
+        self.declare_parameter('use_target_param', False)
+        self.declare_parameter('target_x', 0.550)
+        self.declare_parameter('target_y', -0.000)
+        self.declare_parameter('target_z', 0.262)
+        self.declare_parameter('target_qw', 1.0)
+        self.declare_parameter('target_qx', 0.0)
+        self.declare_parameter('target_qy', 0.0)
+        self.declare_parameter('target_qz', 0.0)
 
         # Pinocchio Model
         self.model = None
@@ -301,22 +311,35 @@ class Sim2RealNode(Node):
             pos = oMf.translation
             quat = pin.Quaternion(oMf.rotation)
             
-            self.target_pose = [
-                pos[0], pos[1], pos[2],
-                quat.w, quat.x, quat.y, quat.z
-            ]
+            use_target_param = self.get_parameter('use_target_param').value
+            if use_target_param:
+                tx = self.get_parameter('target_x').value
+                ty = self.get_parameter('target_y').value
+                tz = self.get_parameter('target_z').value
+                tqw = self.get_parameter('target_qw').value
+                tqx = self.get_parameter('target_qx').value
+                tqy = self.get_parameter('target_qy').value
+                tqz = self.get_parameter('target_qz').value
+                self.target_pose = [tx, ty, tz, tqw, tqx, tqy, tqz]
+                self.get_logger().info(f"Initialized target pose from params: {self.target_pose}")
+            else:
+                self.target_pose = [
+                    pos[0], pos[1], pos[2],
+                    quat.w, quat.x, quat.y, quat.z
+                ]
+                self.get_logger().info(f"Initialized target pose to current EE: {self.target_pose}")
             
             # Sync interactive marker server pose
             from geometry_msgs.msg import Pose
-            pose = Pose()
-            pose.position.x = float(pos[0])
-            pose.position.y = float(pos[1])
-            pose.position.z = float(pos[2])
-            pose.orientation.w = float(quat.w)
-            pose.orientation.x = float(quat.x)
-            pose.orientation.y = float(quat.y)
-            pose.orientation.z = float(quat.z)
-            self.server.setPose("target_goal", pose)
+            pose_msg = Pose()
+            pose_msg.position.x = float(self.target_pose[0])
+            pose_msg.position.y = float(self.target_pose[1])
+            pose_msg.position.z = float(self.target_pose[2])
+            pose_msg.orientation.w = float(self.target_pose[3])
+            pose_msg.orientation.x = float(self.target_pose[4])
+            pose_msg.orientation.y = float(self.target_pose[5])
+            pose_msg.orientation.z = float(self.target_pose[6])
+            self.server.setPose("target_goal", pose_msg)
             self.server.applyChanges()
             
             self.marker_initialized = True
@@ -380,7 +403,7 @@ class Sim2RealNode(Node):
         # Rotation (rx, ry, rz): 0.02 * 30Hz = 0.6 rad/s = 34.4 deg/s
         delta_pose = np.zeros(6)
         delta_pose[:3] = actions[:3] * 0.005
-        delta_pose[3:] = actions[3:] * 0.01
+        delta_pose[3:] = actions[3:] * 0.005
         lambda_val = 0.01
         lambda_matrix = (lambda_val**2) * np.eye(6)
         
